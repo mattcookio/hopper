@@ -1,10 +1,9 @@
 //! Watches key presses through a macOS event tap.
 //!
 //! The tap sits at the hardware level, so it sees keys before apps, app
-//! shortcuts and other event taps. Every letter or digit pressed while the
-//! right Command key is held goes to the handler and never reaches an app.
+//! shortcuts and other event taps. Each key press and release goes to the
+//! handler, which says whether to let it through, drop it or replace it.
 
-use std::collections::HashSet;
 use std::ffi::c_void;
 use std::time::Duration;
 
@@ -13,6 +12,8 @@ use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::runloop::{CFRunLoop, kCFRunLoopCommonModes};
 use core_foundation::string::{CFString, CFStringRef};
+
+use crate::keys::{Action, Key};
 
 type EventRef = *mut c_void;
 type MachPortRef = *mut c_void;
@@ -29,10 +30,6 @@ const TAP_DISABLED_BY_USER_INPUT: u32 = 0xFFFF_FFFF;
 const FIELD_AUTOREPEAT: u32 = 8;
 const FIELD_KEYCODE: u32 = 9;
 
-// Device-dependent modifier bits (IOKit NX_DEVICE*CMDKEYMASK).
-const LEFT_CMD: u64 = 0x08;
-const RIGHT_CMD: u64 = 0x10;
-
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     fn CGEventTapCreate(
@@ -45,6 +42,9 @@ unsafe extern "C" {
     ) -> MachPortRef;
     fn CGEventTapEnable(tap: MachPortRef, enable: bool);
     fn CGEventGetFlags(event: EventRef) -> u64;
+    fn CGEventSetFlags(event: EventRef, flags: u64);
+    fn CGEventSetIntegerValueField(event: EventRef, field: u32, value: i64);
+    fn CGEventCreateKeyboardEvent(source: *const c_void, code: u16, down: bool) -> EventRef;
     fn CGEventGetIntegerValueField(event: EventRef, field: u32) -> i64;
     fn CGEventKeyboardGetUnicodeString(
         event: EventRef,
@@ -65,14 +65,12 @@ unsafe extern "C" {
     ) -> RunLoopSourceRef;
 }
 
-/// Called with the lowercase letter or digit pressed.
-pub type Handler = Box<dyn FnMut(char)>;
+/// Called for each key press and release. Returns what to do with it.
+pub type Handler = Box<dyn FnMut(&Key) -> Action>;
 
 struct State {
     port: MachPortRef,
     handler: Handler,
-    /// Keys whose press was swallowed. Their release is swallowed too.
-    held: HashSet<i64>,
 }
 
 /// Returns true if the app may use the event tap. If `prompt` is true and it
@@ -96,7 +94,6 @@ pub fn run(handler: Handler) {
     let state = Box::into_raw(Box::new(State {
         port: std::ptr::null_mut(),
         handler,
-        held: HashSet::new(),
     }));
     unsafe {
         let port = loop {
@@ -141,32 +138,30 @@ extern "C" fn on_event(
         unsafe { CGEventTapEnable(state.port, true) };
         return event;
     }
-    let keycode = unsafe { CGEventGetIntegerValueField(event, FIELD_KEYCODE) };
-    if kind == KEY_UP {
-        return if state.held.remove(&keycode) {
-            std::ptr::null_mut()
-        } else {
-            event
-        };
-    }
-    if kind != KEY_DOWN {
+    if kind != KEY_DOWN && kind != KEY_UP {
         return event;
     }
 
-    let flags = unsafe { CGEventGetFlags(event) };
-    if flags & RIGHT_CMD == 0 || flags & LEFT_CMD != 0 {
-        return event;
-    }
-    let Some(letter) = letter_of(event) else {
-        return event;
+    let key = unsafe {
+        Key {
+            code: CGEventGetIntegerValueField(event, FIELD_KEYCODE) as u16,
+            flags: CGEventGetFlags(event),
+            down: kind == KEY_DOWN,
+            repeat: CGEventGetIntegerValueField(event, FIELD_AUTOREPEAT) != 0,
+            letter: letter_of(event),
+        }
     };
-
-    state.held.insert(keycode);
-    let repeat = unsafe { CGEventGetIntegerValueField(event, FIELD_AUTOREPEAT) } != 0;
-    if !repeat {
-        (state.handler)(letter);
+    match (state.handler)(&key) {
+        Action::Pass => event,
+        Action::Swallow | Action::SwitchApp(_) => std::ptr::null_mut(),
+        // macOS releases the returned event along with the original.
+        Action::Send { code, flags } => unsafe {
+            let new = CGEventCreateKeyboardEvent(std::ptr::null(), code, key.down);
+            CGEventSetFlags(new, flags);
+            CGEventSetIntegerValueField(new, FIELD_AUTOREPEAT, key.repeat as i64);
+            new
+        },
     }
-    std::ptr::null_mut()
 }
 
 fn letter_of(event: EventRef) -> Option<char> {

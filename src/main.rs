@@ -1,12 +1,16 @@
 //! Hopper: hold the right Command key and press a letter to bring the app
 //! whose name starts with that letter to the front. Press again to cycle.
+//! It also remaps a few keys; see `keys` and `caps_lock`.
 
+mod caps_lock;
+mod keys;
 mod pick;
 mod tap;
 
 use objc2::rc::autoreleasepool;
 use objc2_app_kit::{NSApplicationActivationOptions, NSApplicationActivationPolicy, NSWorkspace};
 
+use keys::{Action, Router};
 use pick::{App, pick};
 
 fn main() {
@@ -16,7 +20,16 @@ fn main() {
              Allow it in System Settings > Privacy & Security > Accessibility. Hopper starts when you do."
         );
     }
-    tap::run(Box::new(switch_to));
+    caps_lock::map_to_control();
+
+    let mut router = Router::default();
+    tap::run(Box::new(move |key| {
+        let action = router.route(key);
+        if let Action::SwitchApp(letter) = action {
+            switch_to(letter);
+        }
+        action
+    }));
 }
 
 /// Brings the app for `letter` to the front, if one matches.

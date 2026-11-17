@@ -4,6 +4,18 @@ Switch apps from the keyboard on macOS.
 
 Hold the **right Command** key and press a letter. Hopper brings the app whose name starts with that letter to the front. Press again to cycle through apps with the same letter.
 
+## Key remaps
+
+| Keys | Does |
+|---|---|
+| Caps Lock | Control |
+| Control + H / J / K / L | Left / Down / Up / Right arrow. Shift, Option and Command still work with them. |
+| Control + Command + H / L | Move one Space left / right |
+
+Space moves use the macOS shortcut Control + Left / Right arrow. Keep it on in System Settings > Keyboard > Keyboard Shortcuts > Mission Control.
+
+Control + H / J / K / L no longer reach apps. In a terminal, Control + H, K and L lose their usual meaning.
+
 ## Install
 
 ```sh
