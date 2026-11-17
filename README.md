@@ -14,7 +14,7 @@ This builds `Hopper.app`, puts it in `~/Applications` and starts it now and at e
 
 macOS then asks for Accessibility access. Allow Hopper in System Settings > Privacy & Security > Accessibility. Hopper starts working when you do.
 
-Each reinstall makes a new build, so macOS may ask again. If Hopper is in the list but does not work, remove it from the list and allow it again.
+Access stays after a reinstall. If Hopper is in the list but does not work, remove it from the list and allow it again.
 
 Log: `~/Library/Logs/Hopper.log`. To remove Hopper: `mise run uninstall`.
 
@@ -29,5 +29,5 @@ This needs Accessibility access for your terminal app.
 ## Notes
 
 - Only regular apps (with a Dock icon) count.
-- If no app matches the letter, the key press goes through as normal.
+- Right Command + a letter or digit always goes to Hopper, even if no app matches. Apps never see it, so their shortcuts cannot fire from the right Command key.
 - Left Command shortcuts are not changed.

@@ -15,20 +15,12 @@ fn main() {
             "Hopper needs Accessibility access.\n\
              Allow it in System Settings > Privacy & Security > Accessibility. Hopper starts when you do."
         );
-        while !tap::has_accessibility_access(false) {
-            std::thread::sleep(std::time::Duration::from_secs(1));
-        }
     }
-
-    println!("Hopper is running. Hold right Command and press a letter.");
-    if let Err(err) = tap::run(Box::new(switch_to)) {
-        eprintln!("Hopper: {err}");
-        std::process::exit(1);
-    }
+    tap::run(Box::new(switch_to));
 }
 
-/// Brings the app for `letter` to the front. Returns false if no app matches.
-fn switch_to(letter: char) -> bool {
+/// Brings the app for `letter` to the front, if one matches.
+fn switch_to(letter: char) {
     autoreleasepool(|_| {
         let workspace = NSWorkspace::sharedWorkspace();
         let running = workspace.runningApplications();
@@ -49,7 +41,7 @@ fn switch_to(letter: char) -> bool {
             .map(|app| app.processIdentifier());
 
         let Some(target) = pick(&apps, letter, frontmost) else {
-            return false;
+            return;
         };
         if let Some(app) = running
             .iter()
@@ -58,6 +50,5 @@ fn switch_to(letter: char) -> bool {
             app.unhide();
             app.activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows);
         }
-        true
     })
 }

@@ -1,9 +1,12 @@
 //! Watches key presses through a macOS event tap.
 //!
-//! The tap calls a handler for each key press made while the right Command
-//! key is held. If the handler returns true, the key press is swallowed.
+//! The tap sits at the hardware level, so it sees keys before apps, app
+//! shortcuts and other event taps. Every letter or digit pressed while the
+//! right Command key is held goes to the handler and never reaches an app.
 
+use std::collections::HashSet;
 use std::ffi::c_void;
+use std::time::Duration;
 
 use core_foundation::base::TCFType;
 use core_foundation::boolean::CFBoolean;
@@ -16,13 +19,15 @@ type MachPortRef = *mut c_void;
 type RunLoopSourceRef = *mut c_void;
 type TapCallback = extern "C" fn(*mut c_void, u32, EventRef, *mut c_void) -> EventRef;
 
-const SESSION_TAP: u32 = 1;
+const HID_TAP: u32 = 0;
 const HEAD_INSERT: u32 = 0;
 const TAP_DEFAULT: u32 = 0;
 const KEY_DOWN: u32 = 10;
+const KEY_UP: u32 = 11;
 const TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFF_FFFE;
 const TAP_DISABLED_BY_USER_INPUT: u32 = 0xFFFF_FFFF;
 const FIELD_AUTOREPEAT: u32 = 8;
+const FIELD_KEYCODE: u32 = 9;
 
 // Device-dependent modifier bits (IOKit NX_DEVICE*CMDKEYMASK).
 const LEFT_CMD: u64 = 0x08;
@@ -60,12 +65,14 @@ unsafe extern "C" {
     ) -> RunLoopSourceRef;
 }
 
-/// Called with the lowercase letter pressed. Returns true to swallow the press.
-pub type Handler = Box<dyn FnMut(char) -> bool>;
+/// Called with the lowercase letter or digit pressed.
+pub type Handler = Box<dyn FnMut(char)>;
 
 struct State {
     port: MachPortRef,
     handler: Handler,
+    /// Keys whose press was swallowed. Their release is swallowed too.
+    held: HashSet<i64>,
 }
 
 /// Returns true if the app may use the event tap. If `prompt` is true and it
@@ -82,24 +89,32 @@ pub fn has_accessibility_access(prompt: bool) -> bool {
 }
 
 /// Installs the tap on the current run loop and runs the loop forever.
-pub fn run(handler: Handler) -> Result<(), &'static str> {
+///
+/// macOS refuses the tap until the app has Accessibility access, so this
+/// tries again each second until it may.
+pub fn run(handler: Handler) {
     let state = Box::into_raw(Box::new(State {
         port: std::ptr::null_mut(),
         handler,
+        held: HashSet::new(),
     }));
     unsafe {
-        let port = CGEventTapCreate(
-            SESSION_TAP,
-            HEAD_INSERT,
-            TAP_DEFAULT,
-            1 << KEY_DOWN,
-            on_event,
-            state as *mut c_void,
-        );
-        if port.is_null() {
-            return Err("could not create the event tap");
-        }
+        let port = loop {
+            let port = CGEventTapCreate(
+                HID_TAP,
+                HEAD_INSERT,
+                TAP_DEFAULT,
+                (1 << KEY_DOWN) | (1 << KEY_UP),
+                on_event,
+                state as *mut c_void,
+            );
+            if !port.is_null() {
+                break port;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        };
         (*state).port = port;
+        println!("Hopper is running. Hold right Command and press a letter.");
 
         let source = CFMachPortCreateRunLoopSource(std::ptr::null(), port, 0);
         let run_loop = CFRunLoop::get_current();
@@ -111,7 +126,6 @@ pub fn run(handler: Handler) -> Result<(), &'static str> {
         CGEventTapEnable(port, true);
     }
     CFRunLoop::run_current();
-    Ok(())
 }
 
 extern "C" fn on_event(
@@ -127,6 +141,14 @@ extern "C" fn on_event(
         unsafe { CGEventTapEnable(state.port, true) };
         return event;
     }
+    let keycode = unsafe { CGEventGetIntegerValueField(event, FIELD_KEYCODE) };
+    if kind == KEY_UP {
+        return if state.held.remove(&keycode) {
+            std::ptr::null_mut()
+        } else {
+            event
+        };
+    }
     if kind != KEY_DOWN {
         return event;
     }
@@ -139,13 +161,12 @@ extern "C" fn on_event(
         return event;
     };
 
+    state.held.insert(keycode);
     let repeat = unsafe { CGEventGetIntegerValueField(event, FIELD_AUTOREPEAT) } != 0;
-    let swallow = if repeat {
-        true
-    } else {
-        (state.handler)(letter)
-    };
-    if swallow { std::ptr::null_mut() } else { event }
+    if !repeat {
+        (state.handler)(letter);
+    }
+    std::ptr::null_mut()
 }
 
 fn letter_of(event: EventRef) -> Option<char> {

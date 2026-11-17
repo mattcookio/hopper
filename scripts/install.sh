@@ -28,7 +28,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-codesign --force --sign - "$app"
+# Tie the signature to the app ID, not the build, so access survives reinstalls.
+codesign --force --sign - -r="designated => identifier \"$label\"" "$app"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
 cat > "$agent" <<PLIST
