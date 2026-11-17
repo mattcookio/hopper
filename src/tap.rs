@@ -111,7 +111,7 @@ pub fn run(handler: Handler) {
             std::thread::sleep(Duration::from_secs(1));
         };
         (*state).port = port;
-        println!("Hopper is running. Hold right Command and press a letter.");
+        println!("Hopper is running.");
 
         let source = CFMachPortCreateRunLoopSource(std::ptr::null(), port, 0);
         let run_loop = CFRunLoop::get_current();
