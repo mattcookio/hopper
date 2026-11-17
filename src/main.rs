@@ -10,12 +10,14 @@ use objc2_app_kit::{NSApplicationActivationOptions, NSApplicationActivationPolic
 use pick::{App, pick};
 
 fn main() {
-    if !tap::has_accessibility_access() {
+    if !tap::has_accessibility_access(true) {
         eprintln!(
             "Hopper needs Accessibility access.\n\
-             Allow it in System Settings > Privacy & Security > Accessibility, then run Hopper again."
+             Allow it in System Settings > Privacy & Security > Accessibility. Hopper starts when you do."
         );
-        std::process::exit(1);
+        while !tap::has_accessibility_access(false) {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
     }
 
     println!("Hopper is running. Hold right Command and press a letter.");

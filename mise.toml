@@ -1,2 +1,10 @@
 [tools]
 rust = "stable"
+
+[tasks.install]
+description = "Build Hopper.app, install it and start it at login"
+run = "scripts/install.sh"
+
+[tasks.uninstall]
+description = "Stop Hopper and remove it"
+run = "scripts/uninstall.sh"

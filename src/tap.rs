@@ -68,11 +68,16 @@ struct State {
     handler: Handler,
 }
 
-/// Returns true if the app may use the event tap. Shows the system prompt
-/// that asks for Accessibility access if it may not.
-pub fn has_accessibility_access() -> bool {
+/// Returns true if the app may use the event tap. If `prompt` is true and it
+/// may not, shows the system prompt that asks for Accessibility access.
+pub fn has_accessibility_access(prompt: bool) -> bool {
     let key = unsafe { CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt) };
-    let options = CFDictionary::from_CFType_pairs(&[(key, CFBoolean::true_value())]);
+    let value = if prompt {
+        CFBoolean::true_value()
+    } else {
+        CFBoolean::false_value()
+    };
+    let options = CFDictionary::from_CFType_pairs(&[(key, value)]);
     unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef() as *const c_void) }
 }
 
