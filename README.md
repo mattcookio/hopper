@@ -14,7 +14,12 @@ This builds `Hopper.app`, puts it in `~/Applications` and starts it now and at e
 
 macOS then asks for Accessibility access. Allow Hopper in System Settings > Privacy & Security > Accessibility. Hopper starts working when you do.
 
-Access stays after a reinstall. If Hopper is in the list but does not work, remove it from the list and allow it again.
+Access stays after a reinstall. If Hopper is in the list but does not work, clear its access and allow it again:
+
+```sh
+tccutil reset Accessibility com.github.mattcookio.hopper
+launchctl kickstart -k gui/$(id -u)/com.github.mattcookio.hopper
+```
 
 Log: `~/Library/Logs/Hopper.log`. To remove Hopper: `mise run uninstall`.
 
